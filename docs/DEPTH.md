@@ -32,10 +32,18 @@
 | TRAP-12 | DST自然日 | 固定24小时 | 按当地午夜切片 | `app/modules/m5_timeliness/rules.py` | `tests/test_m5.py::test_dst_actual_elapsed_hours` |
 | TRAP-13 | 迟到妥投补传 | 按上传时间赔付 | 发生时间重建 | `app/modules/m4_paths/rules.py` | `tests/test_m4.py::test_late_upload_event_time_decides` |
 | TRAP-23 | 假日端点 | 误算全天 | 当地日半开切段 | `app/modules/m5_timeliness/rules.py` | `tests/test_m5.py::test_holiday_full_day_stops` |
+| TRAP-27 | 补传发票改写超时包裹保价 | 同一票两份金额各算一次 | 锁定前采用最新核验、锁定后沿用冻结金额，每票一笔赔款 | `app/settlement.py`、`app/store.py` | `tests/test_settlement.py::test_locked_batch_keeps_original_when_no_correction` |
+| TRAP-28 | 依据切换失败仍改结论 | 先写后校验 | 校验与写入同事务，409/422 时旧版结论与导出不变 | `app/store.py::switch` | `tests/test_settlement.py::test_failed_switch_keeps_previous_conclusion` |
+| TRAP-29 | 同一补正重复提交 | 重复累加赔款 | 发票号+金额指纹幂等 | `app/store.py::add_invoice` | `tests/test_settlement.py::test_invoice_retry_is_idempotent` |
+| TRAP-30 | 锁定后补正倒灌正式结论 | 直接重算 | 冻结正式版本，锁定后发票仅作证据 | `app/settlement.py::present` | `tests/test_settlement.py::test_relock_cannot_pull_late_invoice_into_formal` |
 
 ## 对账规则
 
 输入原始逻辑行=最终采纳来源行+隔离来源行+重复行+空白行+分段表头。派生记录用_sources保存完整来源，因此分组不丢行。业务预期合计与上游申报合计之差等于逐行差异之和。结果按输入摘要、规则版本及参数产生唯一批次，事务写入；同源重跑只复用已有批次。
+
+## 保价依据裁决
+
+同一票可能同时有原申报金额与补传发票核验金额。`app/settlement.py` 为每票选出唯一保价依据并给出另一份未采用的原因；`GET /api/runs/<id>/conclusion`、页面和证据导出共用这一份结论。批次复核为已复核时把结论冻结为正式版本：锁定后补传只作证据（`pending_correction`），不改写赔款；已锁定批次拒绝切换与重复锁定，保证每票唯一赔款。原始扫描与两张发票都保留，同一补正重试按指纹幂等。
 
 ## 已知不覆盖
 

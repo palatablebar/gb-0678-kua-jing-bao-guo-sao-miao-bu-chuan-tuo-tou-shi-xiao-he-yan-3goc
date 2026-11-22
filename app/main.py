@@ -35,6 +35,21 @@ def create_app():
     def history(): return {"runs":store.history()}
     @application.get("/api/runs/<run_id>")
     def run_detail(run_id): return store.get(run_id)
+    @application.get("/api/runs/<run_id>/conclusion")
+    def run_conclusion(run_id): return store.conclusion(run_id)
+    @application.get("/api/runs/<run_id>/invoices")
+    def run_invoices(run_id): return {"invoices":store.invoices(run_id)}
+    @application.post("/api/runs/<run_id>/invoices")
+    def add_invoice(run_id):
+        payload=request.get_json(silent=True)
+        if not isinstance(payload,dict): raise DomainError("BAD_BODY","请求需要对象")
+        return store.add_invoice(run_id,payload)
+    @application.post("/api/runs/<run_id>/settlement/switch")
+    def switch_settlement(run_id):
+        p=request.get_json(silent=True)
+        if not isinstance(p,dict): raise DomainError("BAD_BODY","请求需要对象")
+        if not isinstance(p.get("version"),int): raise DomainError("BAD_VERSION","请提供版本号")
+        return store.switch(run_id,p["version"],p.get("parcel"),p.get("invoice_id"))
     @application.post("/api/runs/<run_id>/review")
     def review(run_id):
         p=request.get_json(silent=True) or {}
@@ -44,7 +59,8 @@ def create_app():
     def archive(run_id):
         from app.archive import build_archive
         run=store.get(run_id)
-        return application.response_class(build_archive(run),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
+        conclusion=store.conclusion(run_id)
+        return application.response_class(build_archive(run,conclusion),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
     for index,(slug,title) in enumerate(MODULES,1):
         module=importlib.import_module(f"app.modules.m{index}_{slug}.handler")
         application.register_blueprint(module.bp)
